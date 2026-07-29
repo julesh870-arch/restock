@@ -37,3 +37,7 @@ jobs:
         with:
           path: state.json
           key: state-${{ github.run_id }}
+          proxies = {
+    "http": "http://USERNAME:PASSWORD@45.11.189.70:59100",
+    "https": "http://USERNAME:PASSWORD@45.11.189.70:59100",
+}
