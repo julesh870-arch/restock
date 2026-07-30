@@ -29,6 +29,9 @@ jobs:
       - name: Verifier les produits
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          HTTP_PROXY: ${{ secrets.PROXY_URL }}
+          HTTPS_PROXY: ${{ secrets.PROXY_URL }}
         run: python3 monitor_once.py
 
       - name: Sauver la memoire
@@ -37,7 +40,3 @@ jobs:
         with:
           path: state.json
           key: state-${{ github.run_id }}
-          proxies = {
-    "http": "http://USERNAME:PASSWORD@45.11.189.70:59100",
-    "https": "http://USERNAME:PASSWORD@45.11.189.70:59100",
-}
