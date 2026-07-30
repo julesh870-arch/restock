@@ -40,3 +40,23 @@ jobs:
         with:
           path: state.json
           key: state-${{ github.run_id }}
+          import os
+import sys
+import requests
+
+# Lit le proxy depuis le Secret GitHub (jamais en dur dans le code)
+proxy_url = os.environ.get("PROXY_URL")
+if not proxy_url:
+    sys.exit("❌ ARRÊT : PROXY_URL absent. Le scraper ne tournera pas sans proxy.")
+
+proxies = {
+    "http": proxy_url,
+    "https": proxy_url,
+}
+
+# Vérifie que le trafic sort BIEN par l'IP du proxy avant de scraper
+ip = requests.get("https://api.ipify.org", proxies=proxies, timeout=15).text.strip()
+print(f"IP de sortie : {ip}")
+if ip != "45.11.189.70":
+    sys.exit(f"❌ ARRÊT : IP inattendue ({ip}), le proxy n'est pas actif.")
+print("✅ Proxy actif, IP masquée.")
