@@ -4,6 +4,7 @@
 # Concu pour GitHub Actions (gratuit, tourne tout seul 24/7 sans serveur a toi).
 
 import os
+import sys
 import json
 import csv
 import ssl
@@ -17,9 +18,34 @@ NTFY_SERVER = "https://ntfy.sh"
 CSV_FILE = "produits.csv"
 STATE_FILE = "state.json"
 
+# IP attendue du proxy Geonix. Si tu renouvelles ta cle avec une autre IP,
+# mets a jour cette valeur (et le Secret PROXY_URL).
+EXPECTED_IP = "45.11.189.70"
+
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 CTX = ssl.create_default_context()
+
+# --- Proxy : lu depuis le Secret GitHub, jamais en dur dans le code ---
+PROXY_URL = (os.environ.get("PROXY_URL") or "").strip()
+if not PROXY_URL:
+    sys.exit("❌ ARRET : PROXY_URL absent — le scraper ne tournera pas sans proxy.")
+
+# Opener qui force TOUT le trafic (http et https) a passer par le proxy.
+OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({"http": PROXY_URL, "https": PROXY_URL}),
+    urllib.request.HTTPSHandler(context=CTX),
+)
+
+
+def check_proxy_ip():
+    """Verifie que le trafic sort bien par l'IP du proxy, sinon on s'arrete."""
+    req = urllib.request.Request("https://api.ipify.org", headers={"User-Agent": UA})
+    ip = OPENER.open(req, timeout=15).read().decode("utf-8", "ignore").strip()
+    print(f"IP de sortie : {ip}")
+    if ip != EXPECTED_IP:
+        sys.exit(f"❌ ARRET : IP inattendue ({ip}), le proxy n'est pas actif.")
+    print("✅ Proxy actif, IP masquee.")
 
 
 def load_products(path):
@@ -44,7 +70,7 @@ def fetch(url):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "fr-FR,fr;q=0.9",
     })
-    with urllib.request.urlopen(req, timeout=20, context=CTX) as r:
+    with OPENER.open(req, timeout=20) as r:
         return r.read().decode("utf-8", "ignore").lower()
 
 
@@ -61,6 +87,57 @@ def push_iphone(title, message, click_url):
         "message": message,
         "click": click_url,
         "tags": ["shopping_cart"],
+        "priority": 5,
+    }).encode("utf-8")
+    req = urllib.request.Request(NTFY_SERVER, data=payload, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    OPENER.open(req, timeout=15)
+
+
+def load_state():
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_state(state):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False)
+
+
+def main():
+    check_proxy_ip()  # garde-fou : on ne scrape jamais sans proxy
+    products = load_products(CSV_FILE)
+    state = load_state()
+    print(f"Verification de {len(products)} produit(s)…")
+    for p in products:
+        try:
+            stock = in_stock(fetch(p["url"]), p)
+        except urllib.error.HTTPError as e:
+            print(f"  ⚠️  {p['name']} : HTTP {e.code}")
+            continue
+        except Exception as e:
+            print(f"  ⚠️  {p['name']} : {e}")
+            continue
+
+        prev = state.get(p["name"])
+        print(f"  {p['name']} : {'EN STOCK' if stock else 'rupture'}")
+        if stock and prev is not True:
+            try:
+                push_iphone("🟢 RESTOCK", f"{p['name']} est disponible !", p["url"])
+                print(f"    📲 Notif iPhone envoyee")
+            except Exception as e:
+                print(f"    ⚠️  Echec notif : {e}")
+        state[p["name"]] = stock
+        time.sleep(2)  # politesse entre 2 produits
+    save_state(state)
+    print("Termine.")
+
+
+if __name__ == "__main__":
+    main()        "tags": ["shopping_cart"],
         "priority": 5,
     }).encode("utf-8")
     req = urllib.request.Request(NTFY_SERVER, data=payload, method="POST",
